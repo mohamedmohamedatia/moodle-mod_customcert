@@ -49,16 +49,14 @@ class email_certificate_task extends \core\task\scheduled_task {
     public function execute() {
         global $DB;
 
-        // Get the certificatesPerRun, includeinnotvisiblecourses and certificateexecutionperiod configurations.
-        $certificatesPerRun = (int)get_config('customcert', 'certificatesperrun');
-        $includeInNotVisibleCourses = (bool)get_config('customcert', 'includeinnotvisiblecourses');
-        $certificateExecutionPeriod = (int)get_config('customcert', 'certificateexecutionperiod');
-
+        // Get the certificatesperrun, includeinnotvisiblecourses, and certificateexecutionperiod configurations.
+        $certificatesperrun = (int)get_config('customcert', 'certificatesperrun');
+        $includeinnotvisiblecourses = (bool)get_config('customcert', 'includeinnotvisiblecourses');
+        $certificateexecutionperiod = (int)get_config('customcert', 'certificateexecutionperiod');
 
         // Get the last processed batch and total certificates to process.
-        $taskProgress = $DB->get_record('customcert_task_progress', ['taskname' => 'email_certificate_task']);
-        $lastProcessedBatch = $taskProgress->last_processed;
-
+        $taskprogress = $DB->get_record('customcert_task_progress', ['taskname' => 'email_certificate_task']);
+        $lastprocessed = $taskprogress->last_processed;
 
         // Get all the certificates that have requested someone get emailed.
         $emailotherslengthsql = $DB->sql_length('c.emailothers');
@@ -79,16 +77,16 @@ class email_certificate_task extends \core\task\scheduled_task {
                  OR $emailotherslengthsql >= 3)";
 
         // Check the includeinnotvisiblecourses configuration.
-        if (!$includeInNotVisibleCourses) {
+        if (!$includeinnotvisiblecourses) {
             // Exclude certificates from hidden courses.
             $sql .= " AND co.visible = 1 AND cat.visible = 1";
         }
 
         // Add condition based on certificate execution period.
-        if ($certificateExecutionPeriod > 0) {
+        if ($certificateexecutionperiod > 0) {
             // Include courses with no end date or end date greater than the specified period.
             $sql .= " AND (co.enddate = 0 OR co.enddate > :enddate)";
-            $params['enddate'] = time() - $certificateExecutionPeriod;
+            $params['enddate'] = time() - $certificateexecutionperiod;
         }
 
         // Execute the SQL query.
@@ -102,26 +100,30 @@ class email_certificate_task extends \core\task\scheduled_task {
         $textrenderer = $page->get_renderer('mod_customcert', 'email', 'textemail');
 
         // Store the total count of certificates in the database.
-        $totalCertificatesToProcess = count($customcerts);
-        $DB->set_field('customcert_task_progress', 'total_certificate_to_process', $totalCertificatesToProcess, [
+        $totalcertificatestoprocess = count($customcerts);
+        $DB->set_field('customcert_task_progress', 'total_certificate_to_process', $totalcertificatestoprocess, [
             'taskname' => 'email_certificate_task',
         ]);
 
-
         // Check if we need to reset and start from the beginning.
-        if ($lastProcessedBatch >= count($customcerts)) {
-            $lastProcessedBatch = 0; // Reset to the beginning.
+        if ($lastprocessed >= count($customcerts)) {
+            $lastprocessed = 0; // Reset to the beginning.
         }
 
-        if ($certificatesPerRun <= 0) {
+        if ($certificatesperrun <= 0) {
             // Process all certificates in a single run.
             $certificates = $customcerts;
         } else {
             // Process certificates in batches, starting from the last processed batch.
-            $certificates = array_slice($customcerts, $lastProcessedBatch, $certificatesPerRun);
+            $certificates = array_slice($customcerts, $lastprocessed, $certificatesperrun);
         }
 
         foreach ($certificates as $customcert) {
+            // Check if the certificate is hidden, quit early.
+            $fastmoduleinfo = get_fast_modinfo($customcert->courseid, $enroluser->id)->instances['customcert'][$customcert->id];
+            if (!$fastmoduleinfo->visible) {
+                continue;
+            }
             // Do not process an empty certificate.
             $sql = "SELECT ce.*
                       FROM {customcert_elements} ce
@@ -166,27 +168,28 @@ class email_certificate_task extends \core\task\scheduled_task {
                      WHERE ci.customcertid = :customcertid";
             $issuedusers = $DB->get_records_sql($sql, ['customcertid' => $customcert->id]);
 
-            // Now, get a list of users who can access the certificate but have not yet.
-            $enrolledusers = get_enrolled_users(\context_course::instance($customcert->courseid), 'mod/customcert:view');
-            foreach ($enrolledusers as $enroluser) {
-                // Check if the user has already been issued.
-                if (in_array($enroluser->id, array_keys((array) $issuedusers))) {
-                    continue;
-                }
+            // Now, get a list of users who can Manage the certificate.
+            $userswithmanage = get_users_by_capability($context, 'mod/customcert:manage', 'id');
 
-                // Now check if the certificate is not visible to the current user.
-                $cm = get_fast_modinfo($customcert->courseid, $enroluser->id)->instances['customcert'][$customcert->id];
-                if (!$cm->uservisible) {
+            // Get the context of the Custom Certificate module.
+            $cm = get_coursemodule_from_instance('customcert', $customcert->id, $customcert->course);
+            $context = get_context_instance(CONTEXT_MODULE, $cm->id);
+
+            // Now, get a list of users who can Issue the certificate but have not yet.
+            // Get users with the specified capability in the Custom Certificate module context.
+            $userwithissue = get_users_by_capability($context, 'mod/customcert:receiveissue', 'id, firstname, lastname, email');
+            $infomodule = new \core_availability\info_module($fastmoduleinfo);
+            // Filter who can't access due to availability restriction, from the full list.
+            $userscanissue = $infomodule->filter_user_list($userwithissue);
+
+            foreach ($userscanissue as $enroluser) {
+                // Check if the user has already been issued.
+                if (in_array($enroluser->id, array_keys((array)$issuedusers))) {
                     continue;
                 }
 
                 // Don't want to email those with the capability to manage the certificate.
-                if (has_capability('mod/customcert:manage', $context, $enroluser->id)) {
-                    continue;
-                }
-
-                // Only email those with the capability to receive the certificate.
-                if (!has_capability('mod/customcert:receiveissue', $context, $enroluser->id)) {
+                if (in_array($enroluser->id, array_keys((array)$userswithmanage))) {
                     continue;
                 }
 
@@ -219,7 +222,7 @@ class email_certificate_task extends \core\task\scheduled_task {
                 }
             }
 
-            // If there are no users to email we can return early.
+            // If there are no users to email, we can return early.
             if (!$issuedusers) {
                 continue;
             }
@@ -230,7 +233,7 @@ class email_certificate_task extends \core\task\scheduled_task {
                 return;
             }
 
-            $issueIds = array();
+            $issueids = array();
             // Now, email the people we need to.
             foreach ($issuedusers as $user) {
                 // Set up the user.
@@ -304,17 +307,18 @@ class email_certificate_task extends \core\task\scheduled_task {
                 }
 
                 // Set the field so that it is emailed.
-                $issueIds[] = $user->issueid;
-                //$DB->set_field('customcert_issues', 'emailed', 1, ['id' => $user->issueid]);
+                $issueids[] = $user->issueid;
             }
-            if (!empty($issueIds)) {
-                $DB->set_field_select('customcert_issues', 'emailed', 1 , 'id IN (' . implode(',', $issueIds) . ')');
+            if (!empty($issueids)) {
+                $DB->set_field_select('customcert_issues', 'emailed', 1, 'id IN (' . implode(',', $issueids) . ')');
             }
         }
-        // Update the last processed batch.
-        $newLastProcessedBatch = $lastProcessedBatch + count($certificates);
-        $DB->set_field('customcert_task_progress', 'last_processed', $newLastProcessedBatch, [
-            'taskname' => 'email_certificate_task',
-        ]);
+        // Update the last processed position, if run in batches.
+        if ($certificatesperrun > 0) {
+            $newlastprocessed = $lastprocessed + count($certificates);
+            $DB->set_field('customcert_task_progress', 'last_processed', $newlastprocessed, [
+                'taskname' => 'email_certificate_task',
+            ]);
+        }
     }
 }
