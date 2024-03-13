@@ -245,9 +245,6 @@ function xmldb_customcert_upgrade($oldversion) {
         $table->add_field('taskname', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, 'email_certificate_task');
         $table->add_field('last_processed', XMLDB_TYPE_INTEGER, '20', null, XMLDB_NOTNULL, null, '0');
         $table->add_field('total_certificate_to_process', XMLDB_TYPE_INTEGER, '20', null, XMLDB_NOTNULL, null, '0');
-        $table->add_field('usermodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
-        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
-        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
 
         // Adding keys to table customcert_task_progress.
         $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
@@ -257,25 +254,19 @@ function xmldb_customcert_upgrade($oldversion) {
         if (!$dbman->table_exists($table)) {
             $dbman->create_table($table);
             // Add a default row to the customcert_task_progress table.
-            $defaultData = new stdClass();
-            $defaultData->taskname = 'email_certificate_task';
-            $defaultData->last_processed = 0;
-            $defaultData->total_certificate_to_process = 0;
-            $defaultData->usermodified = get_admin();;
-            $defaultData->timecreated = time();
-            $defaultData->timemodified = time();
+            $defaultdata = new stdClass();
+            $defaultdata->taskname = 'email_certificate_task';
+            $defaultdata->last_processed = 0;
+            $defaultdata->total_certificate_to_process = 0;
 
             // Write close to ensure the transaction is committed.
             \core\session\manager::write_close();
 
             // Insert the default data into the table.
-            $DB->insert_record('customcert_task_progress', $defaultData);
+            $DB->insert_record('customcert_task_progress', $defaultdata);
         }
-
         // Customcert savepoint reached.
         upgrade_mod_savepoint(true, 2023042408, 'customcert');
     }
-
-
     return true;
 }

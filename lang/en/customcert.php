@@ -228,10 +228,10 @@ $string['userlanguage_help'] = 'You can force the language of the certificate to
 $string['customcert:managelanguages'] = 'Manage language on edit form';
 
 $string['certificatesperrun'] = 'Certificates Per Run';
-$string['certificatesperrun_desc'] = 'Enter the number of certificates to process per scheduled task run where 0 means it will process all certifiate.';
+$string['certificatesperrun_desc'] = 'Enter the number of certificates to process per scheduled task run <b>where 0 means it will process all certifiate</b>.';
 $string['includeinnotvisiblecourses'] = 'Include Certificates in Not Visible Courses';
 $string['includeinnotvisiblecourses_desc'] = 'Check this box to include certificates in courses that are not visible to the user.';
 $string['certificateexecutionperiod'] = 'Certificate Execution Period';
-$string['certificateexecutionperiod_desc'] = 'Specify the period for which certificates should be executed based on their end date. Set to 0 to execute all certificates, regardless of their age.';
+$string['certificateexecutionperiod_desc'] = 'Specify the period for which certificates should be executed based on their end date. <b>Set to 0 to execute all certificates, regardless of their age.</b>';
 $string['scheduledtaskconfigheading'] = 'Scheduled Task Configuration';
 $string['scheduledtaskconfigdesc'] = 'Configure the settings for the scheduled task that processes certificates.';
