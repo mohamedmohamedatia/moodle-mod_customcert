@@ -120,7 +120,7 @@ class email_certificate_task extends \core\task\scheduled_task {
 
         foreach ($certificates as $customcert) {
             // Check if the certificate is hidden, quit early.
-            $fastmoduleinfo = get_fast_modinfo($customcert->courseid, $enroluser->id)->instances['customcert'][$customcert->id];
+            $fastmoduleinfo = get_fast_modinfo($customcert->courseid)->instances['customcert'][$customcert->id];
             if (!$fastmoduleinfo->visible) {
                 continue;
             }
@@ -173,7 +173,7 @@ class email_certificate_task extends \core\task\scheduled_task {
 
             // Get the context of the Custom Certificate module.
             $cm = get_coursemodule_from_instance('customcert', $customcert->id, $customcert->course);
-            $context = get_context_instance(CONTEXT_MODULE, $cm->id);
+            $context = \context_module::instance($cm->id);
 
             // Now, get a list of users who can Issue the certificate but have not yet.
             // Get users with the specified capability in the Custom Certificate module context.
@@ -233,7 +233,7 @@ class email_certificate_task extends \core\task\scheduled_task {
                 return;
             }
 
-            $issueids = array();
+            $issueids = [];
             // Now, email the people we need to.
             foreach ($issuedusers as $user) {
                 // Set up the user.
